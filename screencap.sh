@@ -266,8 +266,8 @@ select_monitor() {
     local screen_num="${screen_nums[$i]}"
     local thumbnail="$temp_dir/screen_${av_index}_thumb.jpg"
     
-    # Create thumbnail using screencapture
-    if screencapture -D $((screen_num + 1)) -t jpg -x "$thumbnail" 2>/dev/null; then
+    # Create thumbnail using /usr/sbin/screencapture
+    if /usr/sbin/screencapture -D $((screen_num + 1)) -t jpg -x "$thumbnail" 2>/dev/null; then
       # Resize thumbnail
       sips -Z 400 "$thumbnail" &>/dev/null || true
       echo "   Monitor $av_index: $thumbnail"
@@ -396,11 +396,11 @@ select_area() {
   echo ""
   echo "   Starting selection..."
   
-  # Method 1: Try screencapture with interactive selection
+  # Method 1: Try /usr/sbin/screencapture with interactive selection
   local temp_img="/tmp/screencap_area_$$.png"
   
-  # Run screencapture in interactive mode
-  if screencapture -i -s "$temp_img" 2>/dev/null; then
+  # Run /usr/sbin/screencapture in interactive mode
+  if /usr/sbin/screencapture -i -s "$temp_img" 2>/dev/null; then
     if [[ -f "$temp_img" ]]; then
       # Get image dimensions and estimate position
       local img_info=$(sips -g pixelWidth -g pixelHeight "$temp_img" 2>/dev/null)
@@ -419,17 +419,40 @@ select_area() {
         # Try to detect position using a workaround
         echo "   📍 Detecting position..."
         
-        # Use AppleScript to get mouse position as a hint
-        local mouse_pos=$(osascript -e 'tell application "System Events" to position of mouse' 2>/dev/null | tr ',' ' ')
-        if [[ -n "$mouse_pos" ]]; then
-          read -r mouse_x mouse_y <<< "$mouse_pos"
-          # Estimate top-left based on mouse position (rough approximation)
-          AREA_X=$((mouse_x - width/2))
-          AREA_Y=$((mouse_y - height/2))
-          # Ensure non-negative
-          [[ $AREA_X -lt 0 ]] && AREA_X=0
-          [[ $AREA_Y -lt 0 ]] && AREA_Y=0
-          echo "   📍 Estimated position: (${AREA_X}, ${AREA_Y})"
+        # Method 1: Try to get window bounds if this was a window selection
+        # Check if the selection matches a window
+        local window_bounds=$(osascript -e 'tell application "System Events"
+          set frontWindow to front window of (first application process whose frontmost is true)
+          set windowPos to position of frontWindow
+          set windowSize to size of frontWindow
+          return (item 1 of windowPos as string) & "," & (item 2 of windowPos as string) & "," & (item 1 of windowSize as string) & "," & (item 2 of windowSize as string)
+        end tell' 2>/dev/null)
+        
+        if [[ -n "$window_bounds" ]]; then
+          IFS=',' read -r win_x win_y win_w win_h <<< "$window_bounds"
+          # Check if dimensions match
+          if [[ "$win_w" == "$width" ]] && [[ "$win_h" == "$height" ]]; then
+            AREA_X="$win_x"
+            AREA_Y="$win_y"
+            echo "   📍 Detected window position: (${AREA_X}, ${AREA_Y})"
+          else
+            # Method 2: Use mouse position as a hint
+            local mouse_pos=$(osascript -e 'tell application "System Events" to position of mouse' 2>/dev/null | tr ',' ' ')
+            if [[ -n "$mouse_pos" ]]; then
+              read -r mouse_x mouse_y <<< "$mouse_pos"
+              # Estimate top-left based on mouse position (rough approximation)
+              AREA_X=$((mouse_x - width/2))
+              AREA_Y=$((mouse_y - height/2))
+              # Ensure non-negative
+              [[ $AREA_X -lt 0 ]] && AREA_X=0
+              [[ $AREA_Y -lt 0 ]] && AREA_Y=0
+              echo "   📍 Estimated position: (${AREA_X}, ${AREA_Y})"
+            else
+              AREA_X=0
+              AREA_Y=0
+              echo "   ⚠️  Could not detect position - using top-left corner"
+            fi
+          fi
         else
           AREA_X=0
           AREA_Y=0
@@ -455,9 +478,9 @@ check_screen_recording_permission() {
   # Try to capture a tiny screenshot to test permission
   local test_file="/tmp/screencap_test_$$.png"
   
-  # Try screencapture with a small timeout using background process
+  # Try /usr/sbin/screencapture with a small timeout using background process
   (
-    screencapture -x -C -t png "$test_file" 2>/dev/null
+    /usr/sbin/screencapture -x -C -t png "$test_file" 2>/dev/null
   ) &
   local pid=$!
   
@@ -496,10 +519,10 @@ select_window() {
   echo ""
   echo "   Starting window selection..."
   
-  # Use screencapture with -o flag for window selection
+  # Use /usr/sbin/screencapture with -o flag for window selection
   local temp_img="/tmp/screencap_window_$$.png"
   
-  if screencapture -i -o -s "$temp_img" 2>/dev/null; then
+  if /usr/sbin/screencapture -i -o -s "$temp_img" 2>/dev/null; then
     if [[ -f "$temp_img" ]]; then
       # Get window dimensions
       local img_info=$(sips -g pixelWidth -g pixelHeight "$temp_img" 2>/dev/null)
