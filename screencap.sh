@@ -176,12 +176,15 @@ get_modes() {
   # For screen capture devices, we can't list modes the same way
   # Just return some common resolutions and the actual screen resolution
   if [[ $VID_DEV =~ ^[0-9]+$ ]] && (( VID_DEV >= 4 )); then
-    echo "3420x2224 60"
     echo "3420x2224 30"
-    echo "1920x1080 60"
+    echo "3420x2224 15"
+    echo "3420x2224 60"
     echo "1920x1080 30"
-    echo "1280x720 60"
+    echo "1920x1080 15"
+    echo "1920x1080 60"
     echo "1280x720 30"
+    echo "1280x720 15"
+    echo "1280x720 60"
   else
     ffmpeg -hide_banner -f avfoundation -list_options true \
            -video_device_index "$VID_DEV" -i "" 2>&1 |
@@ -207,7 +210,12 @@ fi
 # -------- pick frame-rate -------------------------------------------
 available_fps=$(echo "$MODES" | grep "^$RES" | awk '{print $2}' | cut -d'.' -f1)
 if [[ $FPS == auto ]]; then
-  FPS=$(echo "$available_fps" | sort -nr | head -1)
+  # Default to 30fps for screen recording (good balance of smoothness vs file size)
+  if echo "$available_fps" | grep -qx "30"; then
+    FPS=30
+  else
+    FPS=$(echo "$available_fps" | head -1)
+  fi
 elif ! echo "$available_fps" | grep -qx "$FPS"; then
   echo "⚠️  Requested fps not available – using $(echo "$available_fps" | head -1)."
   FPS=$(echo "$available_fps" | head -1)
