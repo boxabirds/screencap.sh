@@ -1,0 +1,26 @@
+# Video output files
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm
+
+# Test files
+test_*
+capture_*
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Thumbnails
+._*
+
+# Temporary files
+*.tmp
+*.bak
+*~
+
+# Logs
+*.log
