@@ -103,9 +103,11 @@ VID_DEV=4
 AUD_DEV="none"
 RES="auto"
 FPS="auto"
-QUAL=65
-CODEC="hevc_videotoolbox"
-TAG="hvc1"
+QUAL=""                 # <-- empty for x264 (uses CRF instead)
+CRF=23                  # <-- Constant Rate Factor for x264 (0-51, lower=better quality)
+PRESET="medium"         # <-- x264 preset (ultrafast to veryslow)
+CODEC="libx264"         # <-- x264 for better compatibility
+TAG="avc1"
 USE_SCK=0
 SCK_FLAGS=()            # <-- always defined, avoids "unbound variable"
 DURATION=""            # <-- always defined, avoids “unbound variable”
@@ -121,8 +123,9 @@ usage() {
   echo "  -a audDev        Audio device index or 'none' (default: none)"
   echo "  -r WxH           Resolution or 'auto' (default: auto)"
   echo "  -f N             Framerate or 'auto' (default: auto)"
-  echo "  -q quality       Video quality 0-100 (default: 65)"
-  echo "  -c codec         Video codec (default: hevc_videotoolbox)"
+  echo "  -q crf           Video quality CRF 0-51 for x264 (default: 23)"
+  echo "  -c codec         Video codec (default: libx264)"
+  echo "  -p preset        x264 preset: ultrafast/fast/medium/slow (default: medium)"
   echo "  -s               Use ScreenCaptureKit (experimental)"
   echo "  --duration Ns    Record for N seconds (e.g. --duration 5s)"
   echo ""
@@ -146,24 +149,26 @@ for arg in "$@"; do
   esac
 done
 
-while getopts "o:d:a:r:f:q:c:sh" opt; do
+while getopts "o:d:a:r:f:q:c:p:sh" opt; do
   case $opt in
     o) OUT=$OPTARG ;;
     d) VID_DEV=$OPTARG ;;
     a) AUD_DEV=$OPTARG ;;
     r) RES=$OPTARG ;;
     f) FPS=$OPTARG ;;
-    q) QUAL=$OPTARG ;;
+    q) CRF=$OPTARG ;;    # Now sets CRF for x264
     c) CODEC=$OPTARG ;;
+    p) PRESET=$OPTARG ;;
     s) USE_SCK=1 ;;
     h|*) usage ;;
   esac
 done
 
 case $CODEC in
-  av1*)  TAG="av01" ;;
-  h264*) TAG="avc1" ;;
-  *)     TAG="hvc1" ;;
+  av1*)      TAG="av01" ;;
+  *h264*|*x264*) TAG="avc1" ;;
+  *hevc*|*h265*) TAG="hvc1" ;;
+  *)         TAG="avc1" ;;  # Default to h264 tag
 esac
 
 # -------- probe helper ----------------------------------------------
@@ -217,8 +222,21 @@ else
 fi
 
 echo "▶︎ Recording screen $VID_DEV → $OUT"
-echo "   ${RES}@${FPS}fps | codec $CODEC q=$QUAL$NOTE"
+if [[ $CODEC == "libx264" ]]; then
+  echo "   ${RES}@${FPS}fps | codec $CODEC crf=$CRF preset=$PRESET$NOTE"
+else
+  echo "   ${RES}@${FPS}fps | codec $CODEC q=$QUAL$NOTE"
+fi
 [[ -n $DURATION ]] && echo "   Duration: $DURATION"
+
+# Warn about file sizes for high resolutions
+if [[ $RES =~ ^[0-9]+x[0-9]+$ ]]; then
+  WIDTH=${RES%x*}
+  if (( WIDTH > 2560 )); then
+    echo "   ⚠️  High resolution may result in large files (~1MB/s)"
+    echo "   💡 For smaller files, use: -r 1920x1080 or -r 1280x720"
+  fi
+fi
 
 # Build ffmpeg command with optional duration
 FFMPEG_CMD=(
@@ -244,8 +262,23 @@ if [[ -n $DURATION ]]; then
 fi
 
 # Add output options
+if [[ $CODEC == "libx264" ]]; then
+  # x264 uses CRF and preset for quality control
+  FFMPEG_CMD+=(
+    -c:v "$CODEC" -crf "$CRF" -preset "$PRESET"
+    -pix_fmt yuv420p  # Ensure compatibility
+    -tag:v "$TAG"
+  )
+elif [[ -n $QUAL ]]; then
+  # Other codecs use quality value
+  FFMPEG_CMD+=(-c:v "$CODEC" -q:v "$QUAL" -tag:v "$TAG")
+else
+  # Default codec settings
+  FFMPEG_CMD+=(-c:v "$CODEC" -tag:v "$TAG")
+fi
+
+# Add audio and format options
 FFMPEG_CMD+=(
-  -c:v "$CODEC" -q:v "$QUAL" -tag:v "$TAG"
   -c:a aac -b:a 128k
   -movflags +faststart
   "$OUT"
