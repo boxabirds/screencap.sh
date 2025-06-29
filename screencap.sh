@@ -99,7 +99,7 @@ fi
 
 # ---------- defaults -------------------------------------------------
 OUT="capture_$(date +%Y%m%d_%H%M%S).mp4"
-VID_DEV=4
+VID_DEV="auto"
 AUD_DEV="none"
 RES="auto"
 FPS="auto"
@@ -177,6 +177,25 @@ while getopts "o:d:a:r:f:q:c:p:sh" opt; do
     h|*) usage ;;
   esac
 done
+
+# -------- auto-detect screen capture device -------------------------
+if [[ $VID_DEV == "auto" ]]; then
+  echo "🔍 Auto-detecting screen capture device..."
+  
+  # Get device list and find first screen capture device
+  devices_output=$(ffmpeg -f avfoundation -list_devices true -i "" 2>&1 || true)
+  first_screen_dev=$(echo "$devices_output" | grep "Capture screen" | head -1 | grep -o '\[[0-9]*\]' | tr -d '[]')
+  
+  if [[ -n "$first_screen_dev" ]]; then
+    VID_DEV="$first_screen_dev"
+    echo "✅ Found screen capture device: $VID_DEV"
+  else
+    echo "❌ No screen capture devices found"
+    echo "Available devices:"
+    echo "$devices_output" | grep '\[[0-9]*\]'
+    exit 1
+  fi
+fi
 
 case $CODEC in
   av1*)      TAG="av01" ;;
